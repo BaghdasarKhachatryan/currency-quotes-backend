@@ -1,6 +1,8 @@
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
+const cors = require("cors");
+const { geterateRates } = require("./helper/rate");
 
 const app = express();
 const server = http.createServer(app);
@@ -11,56 +13,93 @@ const io = new Server(server, {
   },
 });
 
+app.use(express.json());
+app.use(cors());
+
+let intervalId;
+let intervalTimeout = 500;
+let isSendingData = true;
+
 io.on("connection", (socket) => {
-  console.log("A user connected:", socket.id);
-  setInterval(() => {
-    const rates = [
-      {
-        time: new Date(),
-        symbol: "EURUSD",
-        bid: Math.random() * (1.1236 - 1.123) + 1.123,
-        ask: Math.random() * (1.124 - 1.1237) + 1.1237,
-      },
-      {
-        time: new Date(),
-        symbol: "GBPUSD",
-        bid: Math.random() * (1.2536 - 1.253) + 1.253,
-        ask: Math.random() * (1.254 - 1.2537) + 1.2537,
-      },
-      {
-        time: new Date(),
-        symbol: "USDJPY",
-        bid: Math.random() * (110.256 - 110.234) + 110.234,
-        ask: Math.random() * (110.26 - 110.256) + 110.256,
-      },
-      {
-        time: new Date(),
-        symbol: "AUDUSD",
-        bid: Math.random() * (0.7236 - 0.723) + 0.723,
-        ask: Math.random() * (0.724 - 0.7237) + 0.7237,
-      },
-      {
-        time: new Date(),
-        symbol: "USDCAD",
-        bid: Math.random() * (1.2648 - 1.264) + 1.264,
-        ask: Math.random() * (1.265 - 1.2647) + 1.2647,
-      },
-      {
-        time: new Date(),
-        symbol: "NZDUSD",
-        bid: Math.random() * (0.6536 - 0.653) + 0.653,
-        ask: Math.random() * (0.654 - 0.6537) + 0.6537,
-      },
-    ];
-    socket.emit("currencyRates", rates);
-  }, 5000);
+  console.log("Client connected");
 
   socket.on("disconnect", () => {
-    console.log("User disconnected:", socket.id);
+    console.log("Client disconnected");
+  });
+});
+
+const sendData = () => {
+  const rates = geterateRates();
+  io.emit("currencyRates", rates);
+};
+
+const startDataInterval = (timeout) => {
+  clearInterval(intervalId);
+  intervalId = setInterval(sendData, timeout);
+};
+
+startDataInterval(intervalTimeout);
+
+app.post("/api/setIntervalTimeout", (req, res) => {
+  try {
+    const { timeout } = req.body;
+
+    if (timeout && Number.isInteger(timeout)) {
+      intervalTimeout = timeout;
+      isSendingData = true;
+      startDataInterval(intervalTimeout);
+      res.status(200).json({
+        message: `Интервал обновлен до ${intervalTimeout} миллисекунд`,
+      });
+    } else {
+      res.status(400).json({ message: "Неверный интервал тайм-аута." });
+    }
+  } catch (error) {
+    throw error;
+  }
+});
+
+app.post("/api/stopStartSendingData", (req, res) => {
+  try {
+    const { command } = req.body;
+    if (command === "start") {
+      if (!isSendingData) {
+        startDataInterval(intervalTimeout);
+        isSendingData = true;
+        res.status(200).json({ message: "Начата отправка данных." });
+      } else {
+        res.status(200).json({ message: "Данные уже отправляются." });
+      }
+    } else {
+      if (isSendingData) {
+        clearInterval(intervalId);
+        isSendingData = false;
+        res.status(200).json({ message: "Остановлена ​​отправка данных" });
+      } else {
+        res
+          .status(200)
+          .send({ message: "В настоящее время данные не отправляются." });
+      }
+    }
+  } catch (error) {
+    throw error;
+  }
+});
+
+app.use((err, req, res, next) => {
+  console.error("Error message :", err.message);
+  const statusCode = err.status || 500;
+  const message = err.message || "Internal Server Error";
+
+  res.status(statusCode).json({
+    success: false,
+    message: message,
+    status: statusCode,
+    error: process.env.NODE_ENV === "development" ? err.stack : undefined,
   });
 });
 
 const PORT = 3000;
-server.listen(PORT, () => {
+server.listen(3000, () => {
   console.log(`Server is running on http://localhost:${PORT}`);
 });
