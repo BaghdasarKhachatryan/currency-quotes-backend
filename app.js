@@ -3,6 +3,7 @@ const http = require("http");
 const { Server } = require("socket.io");
 const cors = require("cors");
 const { geterateRates } = require("./helper/rate");
+const path = require("path");
 
 const app = express();
 const server = http.createServer(app);
@@ -15,6 +16,11 @@ const io = new Server(server, {
 
 app.use(express.json());
 app.use(cors());
+app.use(express.static(path.join(__dirname, "public")));
+
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
 
 let intervalId;
 let intervalTimeout = 500;
@@ -97,6 +103,10 @@ app.use((err, req, res, next) => {
     status: statusCode,
     error: process.env.NODE_ENV === "development" ? err.stack : undefined,
   });
+});
+
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
 const PORT = 3000;
